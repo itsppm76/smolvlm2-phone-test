@@ -30,7 +30,10 @@ import { AutoProcessor, AutoModelForVision2Seq, RawImage, TextStreamer } from "h
 const ID = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct";
 const $ = s => document.getElementById(s);
 let processor, model, image;
-$("status").textContent = "WebGPU available: " + ("gpu" in navigator);
+let gpuOk = false;
+try { gpuOk = !!("gpu" in navigator && await navigator.gpu.requestAdapter()); } catch (e) {}
+if (!gpuOk) $("dev").value = "wasm";
+$("status").textContent = "WebGPU adapter available: " + gpuOk + (gpuOk ? "" : " (using WASM/CPU, slower)");
 $("file").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   $("preview").src = URL.createObjectURL(f);
@@ -38,6 +41,7 @@ $("file").onchange = async e => {
 };
 $("load").onclick = async () => {
   $("load").disabled = true;
+  window.addEventListener("unhandledrejection", ev => { $("status").textContent = "Error: " + (ev.reason && ev.reason.message || ev.reason); });
   const t0 = performance.now();
   try {
     const progress_callback = p => { if (p.status === "progress") $("status").textContent = `Downloading ${p.file}: ${p.progress.toFixed(0)}%`; };
