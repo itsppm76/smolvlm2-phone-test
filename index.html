@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SmolVLM2-500M raw phone test</title>
+<style>
+ body{font-family:system-ui,sans-serif;max-width:640px;margin:0 auto;padding:16px;background:#111;color:#eee}
+ button,select,input,textarea{font:inherit;padding:10px;margin:4px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
+ button{background:#3b82f6;border:0;font-weight:600} button:disabled{opacity:.5}
+ pre{white-space:pre-wrap;background:#000;padding:10px;border-radius:8px;min-height:3em}
+ img{max-width:100%;border-radius:8px} small{color:#999}
+</style>
+</head>
+<body>
+<h1>SmolVLM2-500M raw test</h1>
+<small>Model: HuggingFaceTB/SmolVLM2-500M-Video-Instruct (Apache 2.0). Runs fully in your browser. First load downloads roughly 360 MB, then it is cached. Standalone test, not connected to Shayari.</small>
+<p>Backend:
+<select id="dev"><option value="webgpu">WebGPU (fast, if your browser supports it)</option><option value="wasm">WASM / CPU (slow, works everywhere)</option></select></p>
+<button id="load">1. Load model</button>
+<pre id="status">Not loaded.</pre>
+<input type="file" id="file" accept="image/*">
+<img id="preview" alt="">
+<textarea id="prompt" rows="2">Describe this image in detail.</textarea>
+<button id="run" disabled>2. Run</button>
+<pre id="out"></pre>
+<pre id="stats"></pre>
+<script type="module">
+import { AutoProcessor, AutoModelForVision2Seq, RawImage, TextStreamer } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2";
+const ID = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct";
+const $ = s => document.getElementById(s);
+let processor, model, image;
+$("status").textContent = "WebGPU available: " + ("gpu" in navigator);
+$("file").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  $("preview").src = URL.createObjectURL(f);
+  image = await RawImage.fromURL($("preview").src);
+};
+$("load").onclick = async () => {
+  $("load").disabled = true;
+  const t0 = performance.now();
+  try {
+    const progress_callback = p => { if (p.status === "progress") $("status").textContent = `Downloading ${p.file}: ${p.progress.toFixed(0)}%`; };
+    processor = await AutoProcessor.from_pretrained(ID, { progress_callback });
+    model = await AutoModelForVision2Seq.from_pretrained(ID, {
+      dtype: { embed_tokens: "fp16", vision_encoder: "q4", decoder_model_merged: "q4" },
+      device: $("dev").value, progress_callback });
+    $("status").textContent = `Loaded in ${((performance.now()-t0)/1000).toFixed(1)}s on ${$("dev").value}.`;
+    $("run").disabled = false;
+  } catch (err) { $("status").textContent = "Load failed: " + err; $("load").disabled = false; }
+};
+$("run").onclick = async () => {
+  if (!image) { $("out").textContent = "Pick an image first."; return; }
+  $("run").disabled = true; $("out").textContent = "";
+  try {
+    const messages = [{ role: "user", content: [{ type: "image" }, { type: "text", text: $("prompt").value }] }];
+    const text = processor.apply_chat_template(messages, { add_generation_prompt: true });
+    const inputs = await processor(text, [image], { do_image_splitting: false });
+    let n = 0; const t0 = performance.now();
+    const streamer = new TextStreamer(processor.tokenizer, { skip_prompt: true, skip_special_tokens: true,
+      callback_function: t => { n++; $("out").textContent += t; } });
+    await model.generate({ ...inputs, max_new_tokens: 256, do_sample: false, streamer });
+    const s = (performance.now()-t0)/1000;
+    $("stats").textContent = `~${n} chunks in ${s.toFixed(1)}s (${(n/s).toFixed(1)} chunks/s, includes image encoding)`;
+  } catch (err) { $("out").textContent = "Run failed: " + err; }
+  $("run").disabled = false;
+};
+</script>
+</body>
+</html>
