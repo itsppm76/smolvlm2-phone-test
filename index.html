@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111111">
 <title>SmolVLM2-500M raw phone test</title>
 <style>
  body{font-family:system-ui,sans-serif;max-width:640px;margin:0 auto;padding:16px;background:#111;color:#eee}
@@ -26,10 +28,13 @@
 <pre id="out"></pre>
 <pre id="stats"></pre>
 <script type="module">
-import { AutoProcessor, AutoModelForVision2Seq, RawImage, TextStreamer } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2";
+import { env, AutoProcessor, AutoModelForVision2Seq, RawImage, TextStreamer } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2";
+env.backends.onnx.wasm.proxy = true; // run WASM inference in a worker so the page stays responsive
 const ID = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct";
 const $ = s => document.getElementById(s);
 let processor, model, image;
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(e => console.warn("sw", e));
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 let gpuOk = false;
 try { gpuOk = !!("gpu" in navigator && await navigator.gpu.requestAdapter()); } catch (e) {}
 if (!gpuOk) $("dev").value = "wasm";
